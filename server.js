@@ -6,6 +6,7 @@ const { generateText } = require('ai');
 const Movie = require('./models/Movie');
 
 const PORT = process.env.PORT || 3000;
+const MAX_AI_DESCRIPTION_LENGTH = 180;
 
 const app = express();
 app.use(cors());
@@ -119,7 +120,7 @@ app.post('/movies/generate', async (req, res) => {
             model: 'anthropic/claude-sonnet-4.5',
             prompt: [
                 'Return JSON only. No markdown. No explanation.',
-                'Create a short movie description up to 40 words.',
+                `Create a short movie description up to ${MAX_AI_DESCRIPTION_LENGTH} characters.`,
                 `Movie title: ${title}`,
                 `Genre: ${genre}`,
                 'Expected JSON format: {"description":"..."}',
@@ -130,6 +131,11 @@ app.post('/movies/generate', async (req, res) => {
         if (!description) {
             return res.status(502).json({
                 message: 'AI response did not include a valid description JSON',
+            });
+        }
+        if (description.length > MAX_AI_DESCRIPTION_LENGTH) {
+            return res.status(422).json({
+                message: `AI description is too long. Maximum allowed is ${MAX_AI_DESCRIPTION_LENGTH} characters.`,
             });
         }
 
