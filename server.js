@@ -40,6 +40,31 @@ function normalizeMoviePayload(body = {}) {
     };
 }
 
+function parseGeneratedDescription(rawText) {
+    try {
+        const parsed = JSON.parse(rawText);
+        if (parsed && typeof parsed.description === 'string') {
+            return parsed.description.trim();
+        }
+    } catch (err) {
+        // Fallback for models that wrap JSON in extra text.
+    }
+
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed && typeof parsed.description === 'string') {
+                return parsed.description.trim();
+            }
+        } catch (err) {
+            // Ignore parse failure and fall through.
+        }
+    }
+
+    return '';
+}
+
 app.get('/', (req, res) => {
     res.json({ message: 'Hello From Backend' });
 });
@@ -74,6 +99,41 @@ app.get('/movies/search', async (req, res) => {
             : {};
         const movies = await Movie.find(filter).sort({ createdAt: -1 });
         res.json(movies);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+app.post('/movies/generate', async (req, res) => {
+    try {
+        await connectToDatabase();
+        const { title, genre } = req.body || {};
+
+        if (!title || !genre) {
+            return res.status(400).json({
+                message: 'title and genre are required',
+            });
+        }
+
+        const { text } = await generateText({
+            model: 'anthropic/claude-sonnet-4.5',
+            prompt: [
+                'Return JSON only. No markdown. No explanation.',
+                'Create a short movie description up to 40 words.',
+                `Movie title: ${title}`,
+                `Genre: ${genre}`,
+                'Expected JSON format: {"description":"..."}',
+            ].join('\n'),
+        });
+
+        const description = parseGeneratedDescription(text);
+        if (!description) {
+            return res.status(502).json({
+                message: 'AI response did not include a valid description JSON',
+            });
+        }
+
+        res.json({ description });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
